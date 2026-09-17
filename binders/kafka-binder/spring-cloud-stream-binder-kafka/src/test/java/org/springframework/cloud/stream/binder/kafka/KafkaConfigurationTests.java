@@ -19,16 +19,20 @@ package org.springframework.cloud.stream.binder.kafka;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cloud.stream.binder.Binding;
+import org.springframework.cloud.stream.binder.BinderFactory;
 import org.springframework.cloud.stream.binding.BindingService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.listener.AbstractMessageListenerContainer;
 import org.springframework.kafka.test.context.EmbeddedKafka;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.test.annotation.DirtiesContext;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +53,9 @@ public class KafkaConfigurationTests {
 	@Autowired
 	private BindingService bindingService;
 
+	@Autowired
+	private BinderFactory binderFactory;
+
 	@Test
 	void testKafkaContainerConfigurationPropagation() throws Exception {
 		Binding<?> fooDestination = this.bindingService.getConsumerBindings("fooConsumer-in-0").iterator().next();
@@ -58,6 +65,21 @@ public class KafkaConfigurationTests {
 		Binding<?> barDestination = this.bindingService.getConsumerBindings("barConsumer-in-0").iterator().next();
 		Map<String, Object> barAdditionalConfigurationProperties = barDestination.getAdditionalConfigurationProperties();
 		assertThat(((Map) barAdditionalConfigurationProperties.get("containerProperties")).get("stopImmediate")).isEqualTo(true);
+	}
+
+	@Test
+	void testObservationRegistryOfLiveContainerIsNotReplaced() {
+		KafkaMessageChannelBinder binder = (KafkaMessageChannelBinder) this.binderFactory
+			.getBinder("kafka", MessageChannel.class);
+		AbstractMessageListenerContainer<?, ?> container = binder.getKafkaMessageListenerContainers()
+			.iterator().next();
+		ObservationRegistry observationRegistry = container.getContainerProperties().getObservationRegistry();
+
+		Binding<?> fooDestination = this.bindingService.getConsumerBindings("fooConsumer-in-0").iterator().next();
+		fooDestination.getAdditionalConfigurationProperties();
+
+		assertThat(container.getContainerProperties().getObservationRegistry()).isSameAs(observationRegistry);
+		assertThat(container.getContainerProperties().getObservationRegistry().observationConfig()).isNotNull();
 	}
 
 	@EnableAutoConfiguration
